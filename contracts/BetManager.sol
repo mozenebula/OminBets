@@ -9,13 +9,14 @@ import "./interface/IBetManager.sol";
 
 contract BetManager is IBetManager {
     mapping(bytes32 => Bet) bets;
-    mapping(bytes32 => mapping(BetOption => uint256)) odds;
+    mapping(bytes32 => mapping(BetOption => uint256)) public odds;
     address public admin;
     mapping (bytes32 => Match) public matches;
-    address  token = 0x961cf779bE7ee8920febb784f37FAA7717A7E67a;
+    address  token;
 
-    constructor() {
+    constructor(address _token) {
         admin = msg.sender;
+        token = _token;
     }
 
     function setAdmin(address _admin) external payable {
@@ -63,9 +64,9 @@ contract BetManager is IBetManager {
         bet.uid = msg.sender;
         bet.exists = true;
         // transfer erc20
-        // IERC20(token).transferFrom(msg.sender, address(this), amount);
+        IERC20(token).transferFrom(msg.sender, address(this), amount);
         odds[matchId][option] += amount;
-        emit creatBetEvent(matchId, betId, msg.sender, option, amount);
+        emit createBetEvent(matchId, betId, msg.sender, option, amount);
     }
 
 
@@ -75,16 +76,16 @@ contract BetManager is IBetManager {
 
     function claimReward(bytes32 betId) external payable {
         require(bets[betId].exists, "Bet does not exist");
+        require(bets[betId].uid == msg.sender, "Unautherized");
         bytes32 matchId = bets[betId].matchId;
-        require(matches[matchId].exists, "Match does not exist");
         require(matches[matchId].status == MatchStatus.Finished, "Match has not finished");
-        require(matches[matchId].result == bets[betId].option, " You lost");
+        require(matches[matchId].result == bets[betId].option, "You lost");
         uint256 reward = bets[betId].amount * calculateOdd(matchId, bets[betId].option) / 10000;
         IERC20(token).transfer(msg.sender, reward);
         emit claimRewardEvent(betId, msg.sender, reward);
     }
 
-    function getOdds(bytes32 matchId) external payable returns(uint256, uint256, uint256) {
+    function getOdds(bytes32 matchId) external view returns(uint256, uint256, uint256) {
         return (odds[matchId][BetOption.HomeWin], odds[matchId][BetOption.Draw], odds[matchId][BetOption.AwayWin]);
     }
 

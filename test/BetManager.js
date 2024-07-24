@@ -11,7 +11,9 @@ const competition = "EuroCup";
 const matchDate = 1718896779;
 const matchIdOne = "0x529ecfbe60e824d858b88c3f4a6a7e002a4e208c6ed32f4ec3a1c1834e0dfd3f";
 const matchIdTwo = "0x67fdd7a79cf4de94db40504e779c25cf8db72daed52ad5ffdd53633fcb174c11";
-const betId = "0x67fdd7a79cf4de94db40504e779c25cf8db72daed52ad5ffdd53633fcb174c12";
+const betIdOne = "0x67fdd7a79cf4de94db40504e779c25cf8db72daed52ad5ffdd53633fcb174c12";
+const betIdTwo = "0x67fdd7a79cf4de94db40504e779c25cf8db72daed52ad5ffdd53633fcb174c13";
+const betIdThree = "0x67fdd7a79cf4de94db40504e779c25cf8db72daed52ad5ffdd53633fcb174c14";
 const MatchStatus = {
     Pending:0,
     Finished:1,
@@ -27,11 +29,13 @@ const BetOption = {
 
   describe("BetManager", function() {
     async function deployContract() {
-        const [owner, otherAccount] = await ethers.getSigners();
+        const OBContract = await ethers.getContractFactory("OB");
+        const OB = await OBContract.deploy(100000);
 
+        const [owner, otherAccount] = await ethers.getSigners();
         const BetManager = await ethers.getContractFactory("BetManager");
-        const betManager = await BetManager.deploy();
-        return {betManager, owner, otherAccount};
+        const betManager = await BetManager.deploy(OB.target);
+        return {betManager, owner, otherAccount, OB};
     }
 
     describe("Deployment", function() {
@@ -113,25 +117,119 @@ const BetOption = {
     describe("createBet", function() {
         it("Should be reverted if match has not been created", async function() {
             const {betManager} = await loadFixture(deployContract);
-            await expect(betManager.createBet(matchIdOne, betId, BetOption.HomeWin, 100)).to.be.revertedWith("Match does not exists");
+            await expect(betManager.createBet(matchIdOne, betIdOne, BetOption.HomeWin, 100)).to.be.revertedWith("Match does not exists");
         });
         it("Should be reverted if match has been opened", async function() {
             const {betManager} = await loadFixture(deployContract);
             await betManager.createMatch(matchIdOne, matchName, competition, matchDate);
             await betManager.updateMatch(matchIdOne, MatchStatus.Finished, BetOption.HomeWin);
-            await expect(betManager.createBet(matchIdOne, betId, BetOption.HomeWin, 100)).to.be.revertedWith("Bet is closed");          
+            await expect(betManager.createBet(matchIdOne, betIdOne, BetOption.HomeWin, 100)).to.be.revertedWith("Bet is closed");          
         });
-        it("Should be reverted if betOption is invaild", async function() {
+        it("Should be reverted if amount is not greater than 0", async function() {
             const {betManager} = await loadFixture(deployContract);
             await betManager.createMatch(matchIdOne, matchName, competition, matchDate);
-            await expect(betManager.createBet(matchIdOne, betId, BetOption.HomeWin, 0)).to.be.revertedWith("Bet amount must be greater than zero");          
+            await expect(betManager.createBet(matchIdOne, betIdOne, BetOption.HomeWin, 0)).to.be.revertedWith("Bet amount must be greater than zero");          
+        });
+
+
+        it("Should have created Bet", async function() {
+            const {betManager, OB} = await loadFixture(deployContract);
+            const [ower, userOne] = await ethers.getSigners();
+            await OB.transfer(userOne.address, 10000);
+            await betManager.createMatch(matchIdOne, matchName, competition, matchDate);
+            await OB.connect(userOne).approve(betManager.target, 5000);
+            await betManager.connect(userOne).createBet(matchIdOne, betIdOne, BetOption.HomeWin, 5000);
+            const bet = await betManager.getBet(betIdOne);
+            const odds = await betManager.getOdds(matchIdOne);
+            expect(await bet.exists).to.be.true;
+            expect(await OB.balanceOf(userOne.address)).to.equal(5000);
+            expect(await OB.balanceOf(betManager.target)).to.equal(5000);
+            expect(odds[0]).to.equal(5000);
         })
 
-    })
+        it("Should have emit createBetEvent", async function() {
+            const {betManager, OB} = await loadFixture(deployContract);
+            const [ower, userOne] = await ethers.getSigners();
+            await OB.transfer(userOne.address, 10000);
+            await betManager.createMatch(matchIdOne, matchName, competition, matchDate);
+            await OB.connect(userOne).approve(betManager.target, 5000);
+            await expect(betManager.connect(userOne).createBet(matchIdOne, betIdOne, BetOption.HomeWin, 5000)).to
+            .emit(betManager, "createBetEvent").withArgs(matchIdOne, betIdOne, userOne.address, BetOption.HomeWin, 5000);
+        });
+    });
 
+    describe("claimReward", function() {
+        it("Should be reverted if bet is invaild", async function() {
+            const {betManager} = await loadFixture(deployContract);
+            await expect(betManager.claimReward(betIdOne)).to.revertedWith("Bet does not exist");
+        });
 
+        it("Should be reverted if unautherized", async function() {
+            const {betManager, OB} = await loadFixture(deployContract);
+            const [ower, userOne] = await ethers.getSigners();
+            await OB.transfer(userOne.address, 10000);
+            await betManager.createMatch(matchIdOne, matchName, competition, matchDate);
+            await OB.connect(userOne).approve(betManager.target, 5000);
+            await betManager.connect(userOne).createBet(matchIdOne, betIdOne, BetOption.HomeWin, 5000);
+            await expect(betManager.claimReward(betIdOne)).to.revertedWith("Unautherized");
+        })
 
-    
+        it("Should be reverted if match has not finished", async function() {
+            const {betManager, OB} = await loadFixture(deployContract);
+            const [ower, userOne] = await ethers.getSigners();
+            await OB.transfer(userOne.address, 10000);
+            await betManager.createMatch(matchIdOne, matchName, competition, matchDate);
+            await OB.connect(userOne).approve(betManager.target, 5000);
+            await betManager.connect(userOne).createBet(matchIdOne, betIdOne, BetOption.HomeWin, 5000);
+            await expect(betManager.connect(userOne).claimReward(betIdOne)).to.revertedWith("Match has not finished");
+        })
+
+        it("Should be reverted if lost", async function() {
+            const {betManager, OB} = await loadFixture(deployContract);
+            const [ower, userOne] = await ethers.getSigners();
+            await OB.transfer(userOne.address, 10000);
+            await betManager.createMatch(matchIdOne, matchName, competition, matchDate);
+            await OB.connect(userOne).approve(betManager.target, 5000);
+            await betManager.connect(userOne).createBet(matchIdOne, betIdOne, BetOption.HomeWin, 5000);
+            await betManager.updateMatch(matchIdOne, MatchStatus.Finished, BetOption.Draw);
+            await expect(betManager.connect(userOne).claimReward(betIdOne)).to.revertedWith("You lost");
+        })
+
+        it("Should get reward if win", async function() {
+            const {betManager, OB} = await loadFixture(deployContract);
+            const [ower, userOne, userTwo, userThree] = await ethers.getSigners();
+            await OB.transfer(userOne.address, 10000);
+            await OB.transfer(userTwo.address, 10000);
+            await OB.transfer(userThree.address, 10000);
+
+            await betManager.createMatch(matchIdOne, matchName, competition, matchDate);
+
+            await OB.connect(userOne).approve(betManager.target, 5000);
+            await OB.connect(userTwo).approve(betManager.target, 5000);
+            await OB.connect(userThree).approve(betManager.target, 5000);
+
+            await betManager.connect(userOne).createBet(matchIdOne, betIdOne, BetOption.HomeWin, 5000);
+            await betManager.connect(userTwo).createBet(matchIdOne, betIdTwo, BetOption.HomeWin, 4000);
+            await betManager.connect(userThree).createBet(matchIdOne, betIdThree, BetOption.AwayWin, 5000);
+
+            await betManager.updateMatch(matchIdOne, MatchStatus.Finished, BetOption.HomeWin);
+            await betManager.connect(userOne).claimReward(betIdOne)
+            expect (await OB.balanceOf(userOne.address)).to.equal(12777)
+        });
+
+        it("Should have emit claimReardEvent", async function() {
+            const {betManager, OB} = await loadFixture(deployContract);
+            const [ower, userOne] = await ethers.getSigners();
+            await OB.transfer(userOne.address, 10000);
+            await betManager.createMatch(matchIdOne, matchName, competition, matchDate);
+            await OB.connect(userOne).approve(betManager.target, 5000);
+            await betManager.connect(userOne).createBet(matchIdOne, betIdOne, BetOption.HomeWin, 5000);
+            await betManager.updateMatch(matchIdOne, MatchStatus.Finished, BetOption.HomeWin);
+            await expect(betManager.connect(userOne).claimReward(betIdOne)).to
+            .emit(betManager, "claimRewardEvent").withArgs(betIdOne, userOne.address, 5000);
+        });
+    });
+
   })
 
 
