@@ -6,7 +6,6 @@ pragma solidity >=0.8.0;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./interface/IBetManager.sol";
 
-
 contract BetManager is IBetManager {
     mapping(bytes32 => Bet) bets;
     mapping(bytes32 => mapping(BetOption => uint256)) public odds;
@@ -75,13 +74,16 @@ contract BetManager is IBetManager {
     }
 
     function claimReward(bytes32 betId) external payable {
-        require(bets[betId].exists, "Bet does not exist");
-        require(bets[betId].uid == msg.sender, "Unautherized");
+        Bet storage bet = bets[betId];
+        require(bet.exists, "Bet does not exist");
         bytes32 matchId = bets[betId].matchId;
+        require(matches[matchId].exists, "Match does not exist");
         require(matches[matchId].status == MatchStatus.Finished, "Match has not finished");
-        require(matches[matchId].result == bets[betId].option, "You lost");
+        require(matches[matchId].result == bets[betId].option, " You lost");
+        require(bet.hasClaimed == false, "You have claimed");
         uint256 reward = bets[betId].amount * calculateOdd(matchId, bets[betId].option) / 10000;
         IERC20(token).transfer(msg.sender, reward);
+        bet.hasClaimed = true;
         emit claimRewardEvent(betId, msg.sender, reward);
     }
 
@@ -95,6 +97,6 @@ contract BetManager is IBetManager {
 
 
     function getMatch(bytes32 matchId) external view returns(Match memory) {
-        return matches[matchId];   
+        return matches[matchId];
     }
 }

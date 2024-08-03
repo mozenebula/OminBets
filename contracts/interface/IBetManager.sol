@@ -24,10 +24,11 @@ interface IBetManager {
         BetOption option;
         uint256 amount;
         bool exists;
+        bool hasClaimed;
     }
 
     function setAdmin(address _admin) external payable;
-    function createMatch(bytes32 matchId, string memory name, string memory competion, uint32 startTime) external payable;
+    function createMatch(bytes32 matchId, string memory name, string memory competition, uint32 startTime) external payable;
     function updateMatch(bytes32 matchId, MatchStatus status, BetOption result) external payable ;
     function getMatch(bytes32 matchId) external view returns(Match memory);
     function createBet(bytes32 matchId, bytes32 betId, BetOption option, uint256 amount) external payable;
@@ -35,8 +36,8 @@ interface IBetManager {
     function getOdds(bytes32 matchId) external view returns(uint256, uint256, uint256) ;
     function getBet(bytes32 betId) external view returns(Bet memory);
 
-    event createMatchEvent(bytes32 matchId, string name, string competion, uint32 startTime);
-    event updateMatchEvent(bytes32 matchId, MatchStatus status, BetOption result);
-    event createBetEvent(bytes32 matchId, bytes32 betId, address uid, BetOption option, uint256 amount);
-    event claimRewardEvent(bytes32 betId, address uid, uint256 reward);
+    event createMatchEvent(bytes32 indexed matchId, string name, string competion, uint32 startTime);
+    event updateMatchEvent(bytes32 indexed matchId, MatchStatus status, BetOption result);
+    event createBetEvent(bytes32 matchId, bytes32 betId, address indexed uid, BetOption option, uint256 amount);
+    event claimRewardEvent(bytes32 betId, address indexed  uid, uint256 reward);
 }
